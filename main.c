@@ -4,13 +4,14 @@
 #include <stdbool.h>
 #include <stdlib.h>
 
-// Node struct for the disjoint forest
+// Node struct for the disjoint set
 typedef struct node node;
 struct node {
-    int rank;
+    int rank;   // If >0 gives the rank of the path, else it will be -1 which indicates a wall, ignore *parent if wall
     node *parent;
 };
 
+// Struct for generated matrix cells
 typedef struct {
     int isWall;
 } matrixCell;
@@ -25,17 +26,12 @@ typedef struct {
     vector neckCoords;
 } worm;
 
-void updateWormNeck(worm *worm) {
-    worm->neckCoords = worm->headCoords;
-}
-
 // Disjoint functions
-node* makeSet();
 node* findSet(node *node);
-node* uniteSets(node *x_node, node *y_node);
+void uniteSets(node *x_node, node *y_node);
 
 // Other functions
-// bool isConnected(int entryRow, int entryCol, int exitRow, int exitCol, int** labyrinth, int rows, int cols);
+bool isConnected(node **matrix, int entryRow, int entryCol, int exitRow, int exitCol, int rows, int cols);
 void labGenerator(matrixCell **matrix, unsigned int rows, unsigned int cols, unsigned int entryRow, unsigned int entryCol, unsigned int exitRow, unsigned int exitCol);
 
 int main() {
@@ -50,36 +46,56 @@ int main() {
     // Extracts from file all formatted metadata
     unsigned int rows, cols, entryRow, entryCol, exitRow, exitCol;
     fscanf(filePtr, "%d %d\n%d %d\n%d %d", &rows, &cols, &entryRow, &entryCol, &exitRow, &exitCol);
+    {   //Discards a single line
+        char lineBuffer[cols + 1];
+        fgets(lineBuffer, cols + 2, filePtr);
+    }
 
     // Creates main matrix (pointer of pointers to integers)
-    int** readMatrix = malloc(rows * sizeof(int *));
+    node** readMatrix = malloc(rows * sizeof(node *));
 
     // Scans file for matrix init
     for (int rowCounter = 0; rowCounter < rows; rowCounter++) {
 
         char lineBuffer[cols + 1];
+        memset(lineBuffer, 0, (cols + 1) * sizeof(char));   // Resets all values to zero so that if the buffer doesn't refill all the spaces it won't pass past values forward
         fgets(lineBuffer, cols + 2, filePtr);    // Reads lines
 
-        readMatrix[rowCounter] = malloc(cols * sizeof(int));  // Allocates rows
+        readMatrix[rowCounter] = malloc(cols * sizeof(node));  // Allocates rows
 
         bool endReached = false;    // Line termination flag
 
         for (int colCounter = 0; colCounter < cols; colCounter++) {
-            if (lineBuffer[colCounter] == 'x' && !endReached) {     // If x or line terminated
-                readMatrix[rowCounter][colCounter] = 1;
-            } else {
-                readMatrix[rowCounter][colCounter] = 0;  // Fills matrix with zeros where not walls
-            }
+            readMatrix[rowCounter][colCounter].parent = &readMatrix[rowCounter][colCounter];    // Init parent pointer to itself
+
             if (lineBuffer[colCounter] == '\n') {   // Waits for EOL to set the flag
                 endReached = true;
             }
+            if (lineBuffer[colCounter] == 'x' && !endReached) {     // If x or line terminated
+                readMatrix[rowCounter][colCounter].rank = -1;
+            } else {
+                readMatrix[rowCounter][colCounter].rank = 0;  // Fills matrix with zeros where not walls
+            }
+
+            printf("%d %d %d %d\n", rowCounter, colCounter, readMatrix[rowCounter][colCounter].rank, endReached);
         }
     }
 
-    // Print Matrix
-    // printMatrix(readMatrix, rows, cols);
+    // Print Matrix of the read labyrinth
+    printf("The readMatrix from file is:\n");
+    for (int i = 0; i < rows; i++) {
+        for (int j = 0; j < cols; j++) {
+            printf("%c ", (readMatrix[i][j].rank == -1) ? 'x' : '.');
+        }
+        printf("\n");
+    }
 
-    // ----------------------------------------------------
+    // Checks if the read matrix is connected
+    if (isConnected(readMatrix, entryRow, entryCol, exitRow, exitCol, rows, cols)) {
+        printf("Connection check result:\n -> The labyrinth is indeed connected\n");
+    } else {
+        printf("Connection check result:\n -> The labyrinth is unfortunately NOT connected\n");
+    }
 
     // Free memory
     for (int i = 0; i < rows; i++) {
@@ -92,19 +108,18 @@ int main() {
     // Generator ------------------------------------------
     // ----------------------------------------------------
 
+    // Creates and populates the new labyrinth
     matrixCell** generatedMatrix = malloc(sizeof(matrixCell *) * rows);
-
     labGenerator(generatedMatrix, rows, cols, entryRow, entryCol, exitRow, exitCol);
 
-    // Print Matrix
+    // Print Matrix of the new labyrinth
+    printf("\nThe generated labyrinth is:\n");
     for (int i = 0; i < rows; i++) {
         for (int j = 0; j < cols; j++) {
-            printf("%c ", generatedMatrix[i][j].isWall ? 'x' : ' ');
+            printf("%c ", generatedMatrix[i][j].isWall ? 'x' : '.');
         }
         printf("\n");
     }
-
-    // ----------------------------------------------------
 
     // Free memory
     for (int i = 0; i < rows; i++) {
@@ -115,96 +130,58 @@ int main() {
     return 0;
 }
 
-// bool isConnected(int entryRow, int entryCol, int exitRow, int exitCol, int** labyrinth, int rows, int cols)
-// {
-//     // Check if the entry and exit points are within the bounds of the labyrinth
-//     if (entryRow < 1 || entryRow > rows || entryCol < 1 || entryCol > cols || exitRow < 1 || exitRow > rows || exitCol < 1 || exitCol > cols)
-//     {
-//         printf("Entry or exit point is out of bounds.\n");
-//         return 500; // Not connected, out of bounds
-//     }
+// Checks if a labyrinth is connected
+bool isConnected(node **matrix, int entryRow, int entryCol, int exitRow, int exitCol, int rows, int cols) {
+    // Check if the entry and exit points are within the bounds of the labyrinth
+    if (entryRow < 1 || entryRow > rows || entryCol < 1 || entryCol > cols || exitRow < 1 || exitRow > rows || exitCol < 1 || exitCol > cols)
+    {
+        printf("Entry or exit point is out of bounds.\n");
+        return 500; // Not connected, out of bounds
+    }
 
-//     // Check if the entry and exit points are walls (1)
-//     if (labyrinth[entryRow - 1][entryCol - 1] == 1 || labyrinth[exitRow - 1][exitCol - 1] == 1)
-//     {
-//         printf("Entry or exit point is a wall.\n");
-//         return 500; // Not connected, not even possible to calculate path
-//     }
+    // Check if the entry and exit points are walls (1)
+    if (matrix[entryRow - 1][entryCol - 1].rank == -1 || matrix[exitRow - 1][exitCol - 1].rank == -1)
+    {
+        printf("Entry or exit point is a wall.\n");
+        return 500; // Not connected, not even possible to calculate path
+    }
 
-//     //create a disjoint set to keep track of connected components
-//     disjoint_set_forest *ds = create_disjoint_set_forest(sizeof(int), node_int_cmp);
-//     if (ds == NULL)
-//     {
-//         printf("Failed to create disjoint set forest\n");
-//         return -1; // Failed to create disjoint set
-//     }
-
-//     for(int i = 0; i < rows; i++)
-//     {
-//         for(int j = 0; j < cols; j++)
-//         {
-//             // If the cell is not a wall (1), create a set for it
-//             if(labyrinth[i][j] == 0)
-//             {
-//                 //printf("Creating set for cell (%d, %d)\n", i, j); //TODO: remove
-//                 int *data = malloc(sizeof(int));
-//                 *data = i * row + j; // Linearize the 2D coordinates and save in data
-//                 int a = make_set(ds, data);
-//                 //printf("Result of make_set: %d\n", a); //TODO: remove
-//                 if(i != 0) //Upper check
-//                 {
-//                     //printf("Upper check\n"); //TODO: remove
-//                     if(labyrinth[i-1][j] == 0)
-//                     {
-//                         disjoint_set_node *s1 = find(ds, data);
-//                         int* data1 = malloc(sizeof(int));
-//                         *data1 = (i-1) * row + j; // Linearize the 2D coordinates and save in data
-//                         disjoint_set_node *s2 = find(ds, data1);
-//                         set_union(ds, s1, s2);
-//                     }
-//                 }
-//                 if(j != 0) //Left check
-//                 {
-//                     //printf("Left check\n"); //TODO: remove
-//                     if(labyrinth[i][j-1] == 0)
-//                     {
-//                         disjoint_set_node *s1 = find(ds, data);
-//                         int* data1 = malloc(sizeof(int));
-//                         *data1 = i * row + (j-1); // Linearize the 2D coordinates and save in data
-//                         disjoint_set_node *s2 = find(ds, data1);
-//                         set_union(ds, s1, s2);
-//                     }
-//                 }
-//             }
-//         }
-//     }
-//     // Check if the entry and exit points belong to the same set
-//     int *entry_data = malloc(sizeof(int));
-//     *entry_data = (entryRow - 1) * row + (entryCol -1); // Linearize the 2D coordinates and save in data
-//     disjoint_set_node *entry_set = find(ds, entry_data);
-//     int *exit_data = malloc(sizeof(int));
-//     *exit_data = (exitRow - 1) * row + (exitCol - 1); // Linearize the 2D coordinates and save in data
-//     disjoint_set_node *exit_set = find(ds, exit_data);
-//     int connected = (entry_set == exit_set) ? 1 : 0; // Check if they are in the same set using a tertiary operator
-//     //printf("Root of entry set: %d\n", *(int *)entry_set->data); //TODO: remove
-//     //printf("Root of exit set: %d\n", *(int *)exit_set->data); //TODO: remove
-//     delete_disjoin_set_forest(ds); // Free the disjoint set forest
-//     free(entry_data); // Free the allocated memory for entry_data
-//     free(exit_data); // Free the allocated memory for exit_data
-//     return connected;
-// }
-
-void labGenerator(matrixCell** matrix, unsigned int rows, unsigned int cols, unsigned int entryRow, unsigned int entryCol, unsigned int exitRow, unsigned int exitCol) {
-    srand(time(NULL));
-
+    // For each path in the matrix it unites sets with the adjacent ones
     for (int rowCounter = 0; rowCounter < rows; rowCounter++) {
-        matrix[rowCounter] = malloc(sizeof(matrixCell) * cols);
+        for (int colCounter = 0; colCounter < cols; colCounter++) {
+            // Checks left
+            if (colCounter > 0 && matrix[rowCounter][colCounter].rank != -1 && matrix[rowCounter][colCounter - 1].rank != -1) {
+                uniteSets(&matrix[rowCounter][colCounter], &matrix[rowCounter][colCounter - 1]);
+            }
+            // Checks up
+            if (rowCounter > 0 && matrix[rowCounter][colCounter].rank != -1 && matrix[rowCounter - 1][colCounter].rank != -1) {
+                uniteSets(&matrix[rowCounter][colCounter], &matrix[rowCounter - 1][colCounter]);
+            }
+        }
+    }
+
+    // Checks that the roots of the entry and exit point are the same -> they are connected
+    if (findSet(&matrix[entryRow - 1][entryCol - 1]) == findSet(&matrix[exitRow - 1][exitCol - 1])) {
+        return true;
+    } else {
+        return false;
+    }
+}
+
+// Generates a libyrinth given some params
+void labGenerator(matrixCell** matrix, unsigned int rows, unsigned int cols, unsigned int entryRow, unsigned int entryCol, unsigned int exitRow, unsigned int exitCol) {
+    srand(time(NULL));  // Init needed for rand() function
+
+    // Init all matrix cells to walls
+    for (int rowCounter = 0; rowCounter < rows; rowCounter++) {
+        matrix[rowCounter] = malloc(sizeof(matrixCell) * cols); // Allocates space for rows
 
         for (int colCounter = 0; colCounter < cols; colCounter++) {
             matrix[rowCounter][colCounter].isWall = 1;
         }
     }
 
+    // Allocates space for all the worms
     int wormPopulation = 2;
     worm **wormList = malloc(sizeof(worm *) * wormPopulation);
 
@@ -221,25 +198,27 @@ void labGenerator(matrixCell** matrix, unsigned int rows, unsigned int cols, uns
     // Until a worm has reached the exit point of the labyrinth all worms will be updated here
     int endReached = 0;
     while (!endReached) {
-        // printf("test2");
+        // For each worm, update
         for (int wormCounter = 0; wormCounter < wormPopulation; wormCounter++) {
-            worm* wormPtr = wormList[wormCounter];
-            vector wormDirection = {wormPtr->headCoords.row - wormPtr->neckCoords.row, wormPtr->headCoords.col - wormPtr->neckCoords.col};
+            worm* wormPtr = wormList[wormCounter];  // Saves the pointer to the current worm, for semplicity
+            vector wormDirection = {wormPtr->headCoords.row - wormPtr->neckCoords.row, wormPtr->headCoords.col - wormPtr->neckCoords.col};  // Calculates the vector of the worm heading
 
+            // If the worm stalls for at least one step, the heading will be a zero vector, it needs to receive a new random heading or it will remain stuck
             if (wormDirection.row == 0 && wormDirection.col == 0) {
                 wormDirection.row = 1;
             }
 
-            printf("%d %d\n", wormDirection.row, wormDirection.col);
+            // Checks for potential diagonal vector results (the worm cannot move diagonally)
             if (wormDirection.row * wormDirection.col != 0) {
                 wormDirection.row = 1; wormDirection.col = 0;
             }
             
-            int newComputedRow = -1, newComputedCol = -1;
+            int newComputedRow = -1, newComputedCol = -1;   // Creates variables for new computed position of the head, init to impossible values
 
-            int tmp = rand() % 20;
+            int tmp = rand() % 20;  // Generates a random number between 0 and 19
             int switchCase;
 
+            // This block is used to "allocate probability" for each movement direction or switchCase value, read below to know which direction each value corrisponds to
             if (tmp < 8) switchCase = 0;
             else if (tmp < 8) switchCase = 1;
             else if (tmp < 10) switchCase = 2;
@@ -263,19 +242,19 @@ void labGenerator(matrixCell** matrix, unsigned int rows, unsigned int cols, uns
                     newComputedRow = wormPtr->headCoords.row + wormDirection.col * -1;
                     newComputedCol = wormPtr->headCoords.col + wormDirection.row * -1;
                     break;
-                default:
+                default:    // Stays put, doesn't move
                     break;
             }
 
+            // Checks for plausability of the new computed position before moving
             if (newComputedCol >= 0 && newComputedCol < cols && newComputedRow >= 0 && newComputedRow < rows) {
-                updateWormNeck(wormPtr);
+                wormPtr->neckCoords = wormPtr->headCoords;    // Updates the neck position to the current head position
                 wormPtr->headCoords.row = newComputedRow;
                 wormPtr->headCoords.col = newComputedCol;
-                // printf("%d %d\n", wormPtr->headCoords.row, wormPtr->headCoords.col);
-                // printf("%d %d - %d %d\n", wormDirection.row, wormDirection.col, wormPtr->headCoords.row, wormPtr->headCoords.col);
 
-                matrix[wormPtr->headCoords.row][wormPtr->headCoords.col].isWall = 0;
+                matrix[wormPtr->headCoords.row][wormPtr->headCoords.col].isWall = 0;    // The new head position is liberated
 
+                // Checks if the worm has reached the end of the labyrinth
                 if (wormPtr->headCoords.row == exitRow - 1 && wormPtr->headCoords.col == exitCol - 1) {
                     endReached = 1;
                 }
@@ -283,54 +262,44 @@ void labGenerator(matrixCell** matrix, unsigned int rows, unsigned int cols, uns
         }
     }
 
+    // Free memory
     for (int wormCounter = 0; wormCounter < wormPopulation; wormCounter++) {
         free(wormList[wormCounter]);
     }
     free(wormList);
 }
 
-// Creates a set with one node (root node)
-node* makeSet() {
-    node *new_set = malloc(sizeof(node));
-
-    new_set->rank = 0;  // Base rank is 1
-    new_set->parent = new_set;  // The parent node of the root node is itself
-
-    return new_set;
-}
-
 // Given any node it finds its root node
 node* findSet(node *nodePtr) {
-    node *tmp1, *tmp2 = nodePtr;
+    // Recursive search
+    if (nodePtr != nodePtr->parent) {
+        return findSet(nodePtr->parent);
+    } else {
+        return nodePtr;
+    }
 
-    // Loops until the parent is equal to the node itself (found the root node)
-    do {
-        tmp1 = tmp2;
-        tmp2 = tmp1->parent;
-    } while (tmp1 != tmp2);
+    // Non-recursive alternative for search algorithm in case useful
+    // node *tmp1, *tmp2 = nodePtr;
 
-    return tmp1;
+    // // Loops until the parent is equal to the node itself (found the root node)
+    // do {
+    //     tmp1 = tmp2;
+    //     tmp2 = tmp1->parent;
+    // } while (tmp1 != tmp2);
+    // return tmp1;
 }
 
 // Attaches two sets together
-node* uniteSets(node *x_node, node *y_node) {
-    node *x_base = findSet(x_node), *y_base = findSet(y_node);
-    node *new_base, *old_base;
+void uniteSets(node *x_node, node *y_node) {
+    node *x_base = findSet(x_node), *y_base = findSet(y_node);  // Finds the node's roots
 
     // Checks which set is smaller and therefore has to be appended to the bigger one
     if (x_base->rank > y_base->rank) {
-        new_base = x_base;
-        old_base = y_base;
+        y_base->parent = x_base;
+    } else if (x_base->rank < y_base->rank) {
+        x_base->parent = y_base;
     } else {
-        new_base = y_base;
-        old_base = x_base;
+        y_base->parent = x_base;
+        x_base->rank++;
     }
-
-    old_base->parent = new_base;    // Attaches the smaller base to the bigger one
-    
-    if (old_base->rank == new_base->rank) { // If the tree grew in rank, it will update it
-        new_base->rank += 1;
-    }
-
-    return new_base;
 }
