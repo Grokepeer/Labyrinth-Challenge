@@ -5,26 +5,29 @@
 #include <stdlib.h>
 
 // Node struct for the disjoint forest
-typedef struct {
+typedef struct node node;
+struct node {
     int rank;
-    struct node *parent;
-} node;
+    node *parent;
+};
 
 typedef struct {
     int isWall;
 } matrixCell;
 
 typedef struct {
-    int rowHead;
-    int colHead;
-    int rowNeck;
-    int colNeck;
-} worm;
-
-typedef struct {
     int row;
     int col;
 } vector;
+
+typedef struct {
+    vector headCoords;
+    vector neckCoords;
+} worm;
+
+void updateWormNeck(worm *worm) {
+    worm->neckCoords = worm->headCoords;
+}
 
 // Disjoint functions
 node* makeSet();
@@ -33,10 +36,7 @@ node* uniteSets(node *x_node, node *y_node);
 
 // Other functions
 // bool isConnected(int entryRow, int entryCol, int exitRow, int exitCol, int** labyrinth, int rows, int cols);
-void printMatrix(int **matrix, int rows, int cols);
-int** initMatrix(int rows, int cols);
 void labGenerator(matrixCell **matrix, unsigned int rows, unsigned int cols, unsigned int entryRow, unsigned int entryCol, unsigned int exitRow, unsigned int exitCol);
-void updateWormNeck(worm *worm);
 
 int main() {
 
@@ -60,8 +60,6 @@ int main() {
         char lineBuffer[cols + 1];
         fgets(lineBuffer, cols + 2, filePtr);    // Reads lines
 
-        //printf("%s", lineBuffer);
-
         readMatrix[rowCounter] = malloc(cols * sizeof(int));  // Allocates rows
 
         bool endReached = false;    // Line termination flag
@@ -79,9 +77,7 @@ int main() {
     }
 
     // Print Matrix
-    printf("hello");
-    printMatrix(readMatrix, rows, cols);
-    printf("second hello");
+    // printMatrix(readMatrix, rows, cols);
 
     // ----------------------------------------------------
 
@@ -92,33 +88,31 @@ int main() {
     free(readMatrix);
     fclose(filePtr);
 
+    // ----------------------------------------------------
     // Generator ------------------------------------------
+    // ----------------------------------------------------
 
     matrixCell** generatedMatrix = malloc(sizeof(matrixCell *) * rows);
 
-    srand(time(NULL));
-
-    printf("hello");
-
     labGenerator(generatedMatrix, rows, cols, entryRow, entryCol, exitRow, exitCol);
 
-    printMatrix(generatedMatrix, rows, cols);
+    // Print Matrix
+    for (int i = 0; i < rows; i++) {
+        for (int j = 0; j < cols; j++) {
+            printf("%c ", generatedMatrix[i][j].isWall ? 'x' : ' ');
+        }
+        printf("\n");
+    }
+
+    // ----------------------------------------------------
+
+    // Free memory
+    for (int i = 0; i < rows; i++) {
+        free(generatedMatrix[i]);
+    }
+    free(generatedMatrix);
 
     return 0;
-
-    // struct Node *ptr = make_set();
-
-    // int rows = 20, cols = 20;
-    // bool **matrix = initMatrix(rows, cols);
-
-    // printMatrix(matrix, rows, cols);
-
-    // // Free allocated memory
-    // for (int i = 0; i < rows; i++) {
-    //     free(matrix[i]);
-    // }
-    // free(matrix);
-
 }
 
 // bool isConnected(int entryRow, int entryCol, int exitRow, int exitCol, int** labyrinth, int rows, int cols)
@@ -201,99 +195,98 @@ int main() {
 // }
 
 void labGenerator(matrixCell** matrix, unsigned int rows, unsigned int cols, unsigned int entryRow, unsigned int entryCol, unsigned int exitRow, unsigned int exitCol) {
-    
+    srand(time(NULL));
+
     for (int rowCounter = 0; rowCounter < rows; rowCounter++) {
         matrix[rowCounter] = malloc(sizeof(matrixCell) * cols);
 
         for (int colCounter = 0; colCounter < cols; colCounter++) {
-            printf("test0");
             matrix[rowCounter][colCounter].isWall = 1;
         }
     }
 
-    int endReached = 0;
-    int wormPopulation = 1;
-
+    int wormPopulation = 2;
     worm **wormList = malloc(sizeof(worm *) * wormPopulation);
 
+    // Init all worms to the entry point in the labyrinth
     for (int wormCounter = 0; wormCounter < wormPopulation; wormCounter++) {
         wormList[wormCounter] = (worm *)malloc(sizeof(worm));
-        wormList[wormCounter]->rowHead = entryRow;
-        wormList[wormCounter]->colHead = entryCol;
-        wormList[wormCounter]->rowNeck = entryRow - 1;
-        wormList[wormCounter]->colNeck = entryCol - 1;
+        (wormList[wormCounter]->headCoords).row = entryRow - 1;
+        (wormList[wormCounter]->headCoords).col = entryCol - 1;
+        wormList[wormCounter]->neckCoords = wormList[wormCounter]->headCoords;
     }
 
-    printf("test1");
+    matrix[entryRow - 1][entryCol - 1].isWall = 0;  //Sets the starting point as empty
 
+    // Until a worm has reached the exit point of the labyrinth all worms will be updated here
+    int endReached = 0;
     while (!endReached) {
-        printf("test2");
+        // printf("test2");
         for (int wormCounter = 0; wormCounter < wormPopulation; wormCounter++) {
-            vector goAhead = {wormList[wormCounter]->rowHead - wormList[wormCounter]->rowNeck, wormList[wormCounter]->colHead - wormList[wormCounter]->colNeck};
+            worm* wormPtr = wormList[wormCounter];
+            vector wormDirection = {wormPtr->headCoords.row - wormPtr->neckCoords.row, wormPtr->headCoords.col - wormPtr->neckCoords.col};
 
-            switch (rand() % 5) {
+            if (wormDirection.row == 0 && wormDirection.col == 0) {
+                wormDirection.row = 1;
+            }
+
+            printf("%d %d\n", wormDirection.row, wormDirection.col);
+            if (wormDirection.row * wormDirection.col != 0) {
+                wormDirection.row = 1; wormDirection.col = 0;
+            }
+            
+            int newComputedRow = -1, newComputedCol = -1;
+
+            int tmp = rand() % 20;
+            int switchCase;
+
+            if (tmp < 8) switchCase = 0;
+            else if (tmp < 8) switchCase = 1;
+            else if (tmp < 10) switchCase = 2;
+            else if (tmp < 12) switchCase = 3;
+            else switchCase = 4;
+
+            switch (switchCase) {
                 case 0: // Goes forwards
-                    updateWormNeck(wormList[wormCounter]);
-                    wormList[wormCounter]->rowHead += goAhead.row;
-                    wormList[wormCounter]->colHead += goAhead.col;
+                    newComputedRow = wormPtr->headCoords.row + wormDirection.row;
+                    newComputedCol = wormPtr->headCoords.col + wormDirection.col;
                     break;
                 case 1: // Goes backwards
-                    updateWormNeck(wormList[wormCounter]);
-                    wormList[wormCounter]->rowHead += goAhead.row * -1;
-                    wormList[wormCounter]->colHead += goAhead.col * -1;
+                    newComputedRow = wormPtr->headCoords.row + wormDirection.row * -1;
+                    newComputedCol = wormPtr->headCoords.col + wormDirection.col * -1;
                     break;
                 case 2: // Goes rightward
-                    updateWormNeck(wormList[wormCounter]);
-                    wormList[wormCounter]->rowHead += goAhead.col;
-                    wormList[wormCounter]->colHead += goAhead.row;
+                    newComputedRow = wormPtr->headCoords.row + wormDirection.col;
+                    newComputedCol = wormPtr->headCoords.col + wormDirection.row;
                     break;
                 case 3: // Goes leftward
-                    updateWormNeck(wormList[wormCounter]);
-                    wormList[wormCounter]->rowHead += goAhead.col * -1;
-                    wormList[wormCounter]->colHead += goAhead.row * -1;
+                    newComputedRow = wormPtr->headCoords.row + wormDirection.col * -1;
+                    newComputedCol = wormPtr->headCoords.col + wormDirection.row * -1;
                     break;
                 default:
                     break;
             }
 
-            matrix[wormList[wormCounter]->rowHead][wormList[wormCounter]->colHead].isWall = 0;
+            if (newComputedCol >= 0 && newComputedCol < cols && newComputedRow >= 0 && newComputedRow < rows) {
+                updateWormNeck(wormPtr);
+                wormPtr->headCoords.row = newComputedRow;
+                wormPtr->headCoords.col = newComputedCol;
+                // printf("%d %d\n", wormPtr->headCoords.row, wormPtr->headCoords.col);
+                // printf("%d %d - %d %d\n", wormDirection.row, wormDirection.col, wormPtr->headCoords.row, wormPtr->headCoords.col);
 
-            if (wormList[wormCounter]->rowHead == exitRow && wormList[wormCounter]->colHead == exitCol) {
-                endReached = 1;
+                matrix[wormPtr->headCoords.row][wormPtr->headCoords.col].isWall = 0;
+
+                if (wormPtr->headCoords.row == exitRow - 1 && wormPtr->headCoords.col == exitCol - 1) {
+                    endReached = 1;
+                }
             }
         }
     }
 
-
-}
-
-void updateWormNeck(worm *worm) {
-    worm->rowNeck = worm->rowHead;
-    worm->colNeck = worm->colHead;
-}
-
-// Prints out to screen the given matrix
-void printMatrix(int **matrix, int rows, int cols) {
-
-    for (int i = 0; i < rows; i++) {
-        for (int j = 0; j < cols; j++) {
-            printf("%c ", matrix[i][j] ? 'x' : ' ');
-        }
-        printf("\n");
+    for (int wormCounter = 0; wormCounter < wormPopulation; wormCounter++) {
+        free(wormList[wormCounter]);
     }
-}
-
-int** initMatrix(int rows, int cols) {
-    int **matrix = malloc(rows * sizeof(int *));
-
-    for (int i = 0; i < rows; i++) {
-        matrix[i] = malloc(cols * sizeof(int));
-        for (int j = 0; j < cols; j++) {
-            matrix[i][j] = 1;
-        }
-    }
-
-    return matrix;
+    free(wormList);
 }
 
 // Creates a set with one node (root node)
